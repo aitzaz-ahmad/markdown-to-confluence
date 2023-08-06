@@ -25,6 +25,12 @@ jobs:
 
       - name: List changed files
         run: |
+            echo ::group::Changed files
             for file in ${{ steps.changed-files.outputs.changed_files }}; do
                 echo "$file was changed"
             done
+            echo ::endgroup::
+
+            echo ::group::Markdown files
+            grep -i "content/*.md" ${{ steps.changed-files.outputs.changed_files }}
+            echo ::endgroup::
