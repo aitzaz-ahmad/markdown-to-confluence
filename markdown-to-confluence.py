@@ -8,6 +8,7 @@ import sys
 
 from confluence import Confluence
 from convert import convtoconf, parse
+from docs import MarkdownPages
 """Deploys Markdown posts to Confluenceo
 
 This script is meant to be executed as either part of a CI/CD job or on an
@@ -41,7 +42,7 @@ def get_environ_headers(prefix):
 
 def get_last_modified(repo):
     """Returns the paths to the last modified files in the provided Git repo
-    
+
     Arguments:
         repo {git.Repo} -- The repository object
     """
@@ -54,12 +55,15 @@ def get_last_modified(repo):
 
 def get_slug(filepath, prefix=''):
     """Returns the slug for a given filepath
-    
+
     Arguments:
         filepath {str} -- The filepath for the post
         prefix {str} -- Any prefixes to the slug
     """
-    slug, _ = os.path.splitext(os.path.basename(filepath))
+    _, parent_dir = os.path.split(os.path.dirname(filepath))
+    file_name, _ = os.path.splitext(os.path.basename(filepath))
+    slug = '{}_{}'.format(parent_dir, file_name)
+
     # Confluence doesn't support searching for labels with a "-",
     # so we need to adjust it.
     slug = slug.replace('-', '_')
@@ -152,13 +156,14 @@ def parse_args():
     return parser.parse_args()
 
 
-def deploy_file(post_path, args, confluence):
+def deploy_file(post_path, args, confluence, get_page_title=None):
     """Creates or updates a file in Confluence
-    
+
     Arguments:
         post_path {str} -- The absolute path of the post to deploy to Confluence
         args {argparse.Arguments} -- The parsed command-line arguments
         confluence {confluence.Confluence} -- The Confluence API client
+        get_title_callback {MarkdownPages.get_title} -- The callback to get the Confluence page title for a cross-referenced markdown doc
     """
 
     _, ext = os.path.splitext(post_path)
@@ -183,24 +188,33 @@ def deploy_file(post_path, args, confluence):
     front_matter['author_keys'] = []
     authors = front_matter.get('authors', [])
     for author in authors:
-        confluence_author = confluence.get_author(author)
+        log.info('author: {}'.format(author))
+        confluence_author = confluence.get_author(author['username'])
         if not confluence_author:
             continue
-        front_matter['author_keys'].append(confluence_author['userKey'])
+        author_tuple = (confluence_author['userKey'], author['designation'])
+        front_matter['author_keys'].append(author_tuple)
 
     # Normalize the content into whatever format Confluence expects
-    html, attachments = convtoconf(markdown, front_matter=front_matter)
+    html, attachments = convtoconf(markdown,
+                                   get_title_callback=get_page_title,
+                                   front_matter=front_matter)
 
-    static_path = os.path.join(args.git, 'static')
+    assets_path = os.path.join(os.path.dirname(post_path), 'images') #todo: rename the 'images' folder to 'assets'
+    log.info('assets_path: {}'.format(assets_path))
     for i, attachment in enumerate(attachments):
-        attachments[i] = os.path.join(static_path, attachment.lstrip('/'))
+        attachments[i] = os.path.join(assets_path, attachment.lstrip('/'))
 
-    slug_prefix = '_'.join(author.lower() for author in authors)
+    log.info('attachments: {}'.format(attachments))
+    slug_prefix = '_'.join(author['username'].lower() for author in authors)
     post_slug = get_slug(post_path, prefix=slug_prefix)
 
     ancestor_id = front_matter['wiki'].get('ancestor_id', args.ancestor_id)
     space = front_matter['wiki'].get('space', args.space)
 
+    log.info('post_slug: {}'.format(post_slug))
+    log.info('ancestor_id: {}'.format(ancestor_id))
+    log.info('space: {}'.format(space))
     tags = front_matter.get('tags', [])
     if args.global_label:
         tags.append(args.global_label)
@@ -231,6 +245,7 @@ def deploy_file(post_path, args, confluence):
 def main():
     args = parse_args()
 
+    page_title_callback = None
     confluence = Confluence(api_url=args.api_url,
                             username=args.username,
                             password=args.password,
@@ -248,13 +263,20 @@ def main():
         changed_posts = [
             os.path.join(args.git, post) for post in get_last_modified(repo)
         ]
+
+        markdown_pages = MarkdownPages(args.git)
+        page_title_callback = markdown_pages.get_title
+
     if not changed_posts:
         log.info('No post created/modified in the latest commit')
         return
 
+    count = 1
     for post in changed_posts:
-        log.info('Attempting to deploy {}'.format(post))
-        deploy_file(post, args, confluence)
+        log.info('Attempting to deploy {} of {}...'.format(count, len(changed_posts)))
+        log.info('Markdown file: {}'.format(post))
+        count += 1
+        deploy_file(post, args, confluence, page_title_callback)
 
 
 if __name__ == '__main__':
