@@ -32,5 +32,6 @@ jobs:
             echo ::endgroup::
 
             echo ::group::Markdown files
-            echo ${{ steps.changed-files.outputs.changed_files }} | grep -i "content/*.md" 
+            echo ${{ steps.changed-files.outputs.changed_files }}
+            #echo grep -i "content/*.md" 
             echo ::endgroup::
