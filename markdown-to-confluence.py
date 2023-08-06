@@ -245,7 +245,6 @@ def deploy_file(post_path, args, confluence, get_page_title=None):
 def main():
     args = parse_args()
 
-    page_title_callback = None
     confluence = Confluence(api_url=args.api_url,
                             username=args.username,
                             password=args.password,
@@ -264,12 +263,14 @@ def main():
             os.path.join(args.git, post) for post in get_last_modified(repo)
         ]
 
-        markdown_pages = MarkdownPages(args.git)
-        page_title_callback = markdown_pages.get_title
-
     if not changed_posts:
         log.info('No post created/modified in the latest commit')
         return
+
+    # walk the entire contents repo and build the meta information needed to
+    # resolve the hyperlinks to cross-referenced documentation pages
+    markdown_pages = MarkdownPages(args.git)
+    page_title_callback = markdown_pages.get_title
 
     count = 1
     for post in changed_posts:
