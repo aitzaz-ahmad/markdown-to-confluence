@@ -30,8 +30,3 @@ jobs:
                 echo "$file was changed"
             done
             echo ::endgroup::
-
-            echo ::group::Markdown files
-            echo ${{ steps.changed-files.outputs.changed_files }}
-            #echo grep -i "content/*.md" 
-            echo ::endgroup::
